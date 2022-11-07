@@ -24,4 +24,4 @@ The final cubes are shown in figure two
 
 The median shape is also found
 
-![Median Shape](Medianshape.png "Median Shape")
+![Median Shape](MedianShape.png "Median Shape")
