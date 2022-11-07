@@ -26,6 +26,3 @@ The median shape is also found
 
 ![Median Shape](Median%20Shape.png "Median Shape")
 
-We suspect these results will be better with bone shapes. It would also
-be nice to devise a measure of goodness of fit. May involve making point clouds 
-where the correspondance between points is known a priori.
