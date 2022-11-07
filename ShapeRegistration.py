@@ -182,6 +182,8 @@ def main(points: torch.Tensor, mu: float = .1, global_max: int = 100, local_max:
                 local_count += 1
 
                 # Get the closest points for each point in shape k
+                
+                # TODO Create a temp array of t_k for each k as the old points havent rotated in the perspective of this k but t_k shows them rotated..
                 N = get_closest_points(points, k, t_k, w_hat, kdtrees)
                 N['chi_o'] = chi_o[torch.arange(K) != k].reshape(K - 1, 1).expand(-1, n_points)  # (K - 1, n_points)
                 # Get the lambda double prime
