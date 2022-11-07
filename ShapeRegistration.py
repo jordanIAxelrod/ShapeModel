@@ -137,7 +137,7 @@ def print_points(thing, shapes, K, title='', q=None):
     plt.show()
 
 
-def main(points: torch.Tensor, mu: float = .1, global_max: int = 100, local_max: int = 100, lmda: float = 10):
+def main(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_max: int = 100, lmda: float = 10):
     """
     Runs the main loop of the algorithm
     :param points: A tensor of K point clouds
@@ -198,9 +198,7 @@ def main(points: torch.Tensor, mu: float = .1, global_max: int = 100, local_max:
                 w_p_m[boolean] = (1 - (torch.linalg.norm(points_not.unsqueeze(0) - N['points'], dim=-1)[boolean]
                               / (lmda_d_p * chi_p_o).unsqueeze(0)
                                        .expand(K - 1, n_points)[boolean]) ** 2) ** 2  # (K - 1, n_points)
-                print(N['weights'] <= 0)
                 chi_min = torch.min(N['chi_o'][N['weights'] > 0])
-                print(chi_min)
                 w_d_p = chi_min / N['chi_o']
                 w_bar = torch.sum(N['weights'] * w_p_m * w_d_p, dim=0)
                 r_k_i = torch.zeros(n_points, 3)
@@ -256,12 +254,12 @@ def main(points: torch.Tensor, mu: float = .1, global_max: int = 100, local_max:
         w_hat = torch.cat(w, dim=0)
         chi_n = torch.cat(x, dim=0)
         t_k = t
-        print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, points, K,
-                     'Point Cloud iteration', q)
+        # print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, points, K,
+        #              'Point Cloud iteration', q)
     print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, points, K, 'Point Cloud End')
 
     return {'Pose Estimation': t_k, 'Membership': w_hat, 'q': q}
 
-
+# TODO Find how the membership maps work and output permuted shapes so points at index i are all corresponding points
 if __name__ == '__main__':
     main(torch.randn(10, 1000, 2))
