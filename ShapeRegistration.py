@@ -64,6 +64,7 @@ def rotate_principal_moment_inertia(point_cloud: torch.Tensor):
 
 def get_closest_points(
         point_cloud: torch.Tensor,
+        curr_points:torch. Tensor,
         k: int,
         transformations: list[list[torch.Tensor]],
         weights: torch.Tensor,
@@ -89,20 +90,22 @@ def get_closest_points(
     for i in range(K):
         if i == k:
             continue
-        transformed_points = point_cloud[k] - transformations[i][1].reshape(1, 3)
+        # Current points in shape k transformed into the basis of the original shape i
+        transformed_points = curr_points - transformations[i][1].reshape(1, 3)
         transformed_points = torch.einsum('ij, nj -> ni', torch.linalg.inv(transformations[i][0]),
                                           transformed_points)  # (K - 1, n_points, 3d)
+        # Get the kdtree in question and query it for our points
         kdtree = trees[i]
         dd, ii = kdtree.query(transformed_points)  # 2 * (n_points)
         ii = torch.LongTensor(ii).squeeze()  #
         # Get the weights of each point
         weights_k = torch.gather(weights[i], -1, ii)  # (n_points)
         weight_list.append(weights_k.unsqueeze(0))
+        # Get the points returned by the tree in our frame of reference
         points = torch.gather(point_cloud[i], 0,
                               ii.unsqueeze(1).expand(n_points, 3)).clone()  # (n_points, 3d)
-        transform_points = torch.einsum('ij, nj -> ni', transformations[i][0], points) + transformations[i][1].reshape(
-            1, 3)
-        point_list.append(transform_points.unsqueeze(0))
+        # Add points and distances to out list
+        point_list.append(points.unsqueeze(0))
         distance_list.append(dd)
     med_dist = torch.median(torch.Tensor(distance_list), dim=0)[0]
     points = torch.cat(point_list, dim=0)
@@ -183,17 +186,16 @@ def main(points: torch.Tensor, mu: float = .1, global_max: int = 100, local_max:
 
                 # Get the closest points for each point in shape k
                 
-                # TODO Create a temp array of t_k for each k as the old points havent rotated in the perspective of this k but t_k shows them rotated..
-                N = get_closest_points(points, k, t_k, w_hat, kdtrees)
+                N = get_closest_points(points, points_not, k, t_k, w_hat, kdtrees)
                 N['chi_o'] = chi_o[torch.arange(K) != k].reshape(K - 1, 1).expand(-1, n_points)  # (K - 1, n_points)
                 # Get the lambda double prime
                 lmda_d_p = math.sqrt(max(lmda, math.sqrt(2) / (math.sqrt(2) - 1))) / chi_p_o * N['median']  # (K - 1, n_points)
 
                 # whether the prime weight is within the noise envelope
-                boolean = torch.norm(points_not.unsqueeze(0) - N['points'], dim=-1) <= lmda_d_p * chi_p_o
+                boolean = torch.linalg.norm(points_not.unsqueeze(0) - N['points'], dim=-1) <= lmda_d_p * chi_p_o
                 # Weighted mean of the nearest points
                 w_p_m = torch.zeros(K - 1, n_points)
-                w_p_m[boolean] = (1 - (torch.norm(points_not.unsqueeze(0) - N['points'], dim=-1)[boolean]
+                w_p_m[boolean] = (1 - (torch.linalg.norm(points_not.unsqueeze(0) - N['points'], dim=-1)[boolean]
                               / (lmda_d_p * chi_p_o).unsqueeze(0)
                                        .expand(K - 1, n_points)[boolean]) ** 2) ** 2  # (K - 1, n_points)
                 print(N['weights'] <= 0)
@@ -203,14 +205,13 @@ def main(points: torch.Tensor, mu: float = .1, global_max: int = 100, local_max:
                 w_bar = torch.sum(N['weights'] * w_p_m * w_d_p, dim=0)
                 r_k_i = torch.zeros(n_points, 3)
 
-                r_k_i[(w_bar > 0)] = torch.sum((N['weights'] * w_p_m * w_d_p)
-                                                                       .unsqueeze(2) * N['points'], dim=0)[
-                                       (w_bar > 0) & (~torch.isnan(w_bar))] / w_bar.unsqueeze(1)[(w_bar > 0) & (~torch.isnan(w_bar))]
+                r_k_i[w_bar > 0] = torch.sum((N['weights'] * w_p_m * w_d_p).unsqueeze(2) * N['points'], dim=0)[
+                                       w_bar > 0] / w_bar.unsqueeze(1)[w_bar > 0]
                 r_k_i[(w_bar <= 0) | (torch.isnan(w_bar))] = torch.median(N['points'], dim=0)[0][(w_bar <= 0) | (torch.isnan(w_bar))]
                 # Consensus median centroid between the closest points, and it's self. The centroid of the points
                 q = points_not / K + (K - 1) / K * r_k_i  # (n_points, 3d)
                 # Distance from median to its corresponding point
-                e_hat = torch.norm(q - points_not, dim=-1)  # (n_points)
+                e_hat = torch.linalg.norm(q - points_not, dim=-1)  # (n_points)
                 sigma_hat = 1.5 * torch.nanmedian(e_hat)  # 1
 
                 # New weights based on the distance from the median
@@ -225,9 +226,7 @@ def main(points: torch.Tensor, mu: float = .1, global_max: int = 100, local_max:
                 # Centered points
                 p_c = points_not - p_bar
                 q_c = q - q_bar
-                if global_count > 3:
 
-                    print(p_bar)
                 # Covariance Matrix
                 H = torch.zeros(3,3)
                 for n in range(3):
