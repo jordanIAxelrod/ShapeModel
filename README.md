@@ -13,18 +13,18 @@ TestShapeRegistration.py generates these cubes and runs IMCP and prints the resu
 
 The initial cubes are randomly rotated and translated. As shown in figure 1
 
-![Initial Cubes](Initial%20cubes.png "Initial Cubes")
+![Initial Cubes](img/Initial%20cubes.png "Initial Cubes")
 
 The model then outputs the points, their rigid transformations with respect to the
 median shape, and a membership map.
 
 The final cubes are shown in figure two
 
-![Final Cubes](Point%20Cloud%20End.png "Ending Point Clouds")
+![Final Cubes](img/Point%20Cloud%20End.png "Ending Point Clouds")
 
 The median shape is also found
 
-![Median Shape](MedianShape.png "Median Shape")
+![Median Shape](img/MedianShape.png "Median Shape")
 
 We suspect these results will be better with bone shapes. It would also
 be nice to devise a measure of goodness of fit. May involve making point clouds 
