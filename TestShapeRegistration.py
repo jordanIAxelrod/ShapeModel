@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-import ShapeRegistration
+import IMCP
 from scipy.spatial.transform import Rotation
 from scipy.cluster.vq import kmeans
 
@@ -45,7 +45,8 @@ def print_points(thing, shapes, K, q, title=''):
     ax = plt.axes(projection='3d')
     plt.title(title)
     if q is not None:
-        ax.scatter3D(q[:, 0], q[:, 1], q[:, 2], label='q')
+        for i in range(K):
+            ax.scatter3D(q[i][:, 0], q[i][:, 1], q[i][:, 2], label='q')
         plt.show()
     fig = plt.figure()
     ax = plt.axes(projection='3d')
@@ -65,7 +66,7 @@ def TestMainLoop(n_points, K, n):
         shape = get_n_points(n, shape)
         shapes.append(shape)
     print(shapes)
-    shapes = torch.Tensor(shapes)
+    shapes = torch.Tensor(np.array(shapes))
     x = shapes.clone()
     print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, shapes, K, None, 'Start')
     # creating a decent initial guess of the shapes
@@ -73,7 +74,7 @@ def TestMainLoop(n_points, K, n):
     # centroids = - torch.mean(shapes, dim=1)
     # shapes = shapes + centroids.unsqueeze(1)
     # shapes, rotation = ShapeRegistration.rotate_principal_moment_inertia(shapes)
-    thing = ShapeRegistration.main(shapes)
+    thing = IMCP.IMCP(shapes)
     print(x == shapes)
     q = thing['q']
 
@@ -82,7 +83,7 @@ def TestMainLoop(n_points, K, n):
 
 if __name__ == '__main__':
     shape = torch.Tensor(create_random_rectangle(1000)).unsqueeze(0)
-    shape = ShapeRegistration.rotate_principal_moment_inertia(ShapeRegistration.normalize_shape(shape))[0].squeeze()
+    shape = IMCP.rotate_principal_moment_inertia(IMCP.normalize_shape(shape))[0].squeeze()
     import matplotlib.pyplot as plt
 
     fig = plt.figure()

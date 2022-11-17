@@ -17,7 +17,7 @@ from scipy.spatial.transform import Rotation
 from scipy.spatial import KDTree
 import numpy as np
 import matplotlib.pyplot as plt
-
+from LaplacianFilter import get_laplace_filter
 
 # This is the first step of the registration. We would like to make all the shapes unit length
 def normalize_shape(point_cloud: torch.Tensor):
@@ -107,7 +107,7 @@ def get_closest_points(
         # Add points and distances to out list
         point_list.append(points.unsqueeze(0))
         distance_list.append(dd)
-    med_dist = torch.median(torch.Tensor(distance_list), dim=0)[0]
+    med_dist = torch.median(torch.Tensor(np.array(distance_list)), dim=0)[0]
     points = torch.cat(point_list, dim=0)
     weights_k = torch.cat(weight_list, dim=0)
     return {'points': points, 'weights': weights_k, 'median': med_dist}
@@ -137,7 +137,7 @@ def print_points(thing, shapes, K, title='', q=None):
     plt.show()
 
 
-def main(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_max: int = 100, lmda: float = 10):
+def IMCP(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_max: int = 100, lmda: float = 10):
     """
     Runs the main loop of the algorithm
     :param points: A tensor of K point clouds
@@ -167,7 +167,7 @@ def main(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_m
         global_count += 1
         temp = chi_n.clone()
         chi_o = temp
-        p, w, x, t = [], [], [], []
+        q_l, p, w, x, t = [], [], [], [], []
         for k in range(K):
             chi_p_n = chi_o[k].clone()
             chi_p_o = chi_o[k].clone()
@@ -245,7 +245,7 @@ def main(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_m
                 t_k_l[1] = torch.matmul(T_hat[0], t_k_l[1].unsqueeze(1)).squeeze() + T_hat[1]
                 fake_points = points.clone()
                 fake_points[k] = points_not
-
+            q_l.append(q)
             p.append(points_not.unsqueeze(0))
             w.append(w_hat_not.unsqueeze(0))
             x.append(chi_p_n.unsqueeze(0))
@@ -258,8 +258,18 @@ def main(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_m
         #              'Point Cloud iteration', q)
     print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, points, K, 'Point Cloud End')
 
-    return {'Pose Estimation': t_k, 'Membership': w_hat, 'q': q}
+    return {'Pose Estimation': t_k, 'Membership': w_hat, 'q': q_l}
 
 # TODO Find how the membership maps work and output permuted shapes so points at index i are all corresponding points
+def intrinsic_consensus_shape(q_l: torch.Tensor, weights: torch.Tensor, n: int, size: int, iters: int):
+    # Get the most reliable points.
+    weights, idx = torch.topk(weights, size)
+    q_l = q_l.gather(0, weights.reshape(-1, 1).expand(-1, 3))
+
+    # Find the neighbors of the points to apply laplacian filter.
+    for _ in range(iters):
+        q_l = get_laplace_filter(q_l, weights, n)
+    return q_l
+
 if __name__ == '__main__':
-    main(torch.randn(10, 1000, 2))
+    IMCP(torch.randn(10, 1000, 2))
