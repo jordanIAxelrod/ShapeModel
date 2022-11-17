@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-import IMCP
+from src import IMCP
 from scipy.spatial.transform import Rotation
 from scipy.cluster.vq import kmeans
 
