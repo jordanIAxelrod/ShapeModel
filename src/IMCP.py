@@ -17,7 +17,7 @@ from scipy.spatial.transform import Rotation
 from scipy.spatial import KDTree
 import numpy as np
 import matplotlib.pyplot as plt
-from LaplacianFilter import get_laplace_filter
+from src.LaplacianFilter import get_laplace_filter
 
 # This is the first step of the registration. We would like to make all the shapes unit length
 def normalize_shape(point_cloud: torch.Tensor):
@@ -34,7 +34,6 @@ def normalize_shape(point_cloud: torch.Tensor):
     distance = torch.sum(distance, dim=2)
     centroid_size = torch.sqrt(torch.sum(distance, dim=1)) / point_cloud.shape[0]
     return (point_cloud - centroids.unsqueeze(1)) / centroid_size.reshape(-1, 1, 1)
-
 
 # This is the second step where we get a decent alignment of the shapes using inertia.
 
@@ -162,7 +161,7 @@ def IMCP(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_m
     print_points({'Pose Estimation': t_k}, points, K, 'inital')
     w_hat = torch.ones(K, n_points)
     global_count = 0
-
+    q_list = []
     while (any(-(chi_n - chi_o) >= mu * chi_o) or not global_count) and global_count < global_max:
         global_count += 1
         temp = chi_n.clone()
@@ -254,13 +253,13 @@ def IMCP(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_m
         w_hat = torch.cat(w, dim=0)
         chi_n = torch.cat(x, dim=0)
         t_k = t
+        q_list = q_l
         # print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, points, K,
         #              'Point Cloud iteration', q)
     print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, points, K, 'Point Cloud End')
 
-    return {'Pose Estimation': t_k, 'Membership': w_hat, 'q': q_l}
+    return {'Pose Estimation': t_k, 'Membership': w_hat, 'q': q_list}
 
-# TODO Find how the membership maps work and output permuted shapes so points at index i are all corresponding points
 def intrinsic_consensus_shape(q_l: torch.Tensor, weights: torch.Tensor, n: int, size: int, iters: int):
     # Get the most reliable points.
     weights, idx = torch.topk(weights, size)
