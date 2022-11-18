@@ -5,6 +5,16 @@ import CPD
 import IO
 import PPCA
 import sklearn.decomposition as decomp
+
+"""
+To Do list. 
+Think about doing pca vs ppca
+Register a new shape and find the parameters of the shape model that minimize the 
+sum of the distance.
+Create random and find the shape that minimizes the distance.
+Refactor the code to seperate the IMCP and the PCA steps.
+Update the attributes of the class to include the results of the pca the original data and the mv shape
+"""
 class ShapeModel(nn.Module):
 
     def __init__(self):
