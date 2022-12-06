@@ -4,7 +4,8 @@ import IMCP
 import CPD
 import IO
 from sklearn.decomposition import PCA
-
+import matplotlib.pyplot as plt
+import open3d
 """
 To Do list. 
 Register a new shape and find the parameters of the shape model that minimize the 
@@ -24,34 +25,51 @@ class ShapeModel(nn.Module):
         self.eig_vecs = None
         self.n_points = None
         self.dim = None
+        self.mean_shape = None
         self.ppca = PCA()
 
-    def forward(self, x, n_components: int) -> torch.Tensor:
+    def forward(self, x, verbose=False) -> torch.Tensor:
         """
         Takes a list mask file_names, computes a PCA and returns the decomp matricies
         :param x: list of points from masks
             Shape:`(n_masks, n_points, 3)'
         :return: The output of PCA
         """
-        x = IO.read(x)
         shapes, self.n_points, self.dim = x.shape
 
         # First inital Guess
         x_imcp = IMCP.normalize_shape(x)
-        x_imcp = IMCP.rotate_principal_moment_inertia(x_imcp)
+        x_imcp, _ = IMCP.rotate_principal_moment_inertia(x_imcp)
         # Do simultaneous alignment
-        pose, weights, q = IMCP.IMCP(x_imcp)
+        model = IMCP.IMCP(x_imcp, verbose=verbose)
+        weights = model['Membership']
+        pose = model['Pose Estimation']
+        q = model['q']
         q = torch.cat([Q.unsqueeze(0) for Q in q], dim=0)
         weights = torch.cat([weights[k: k + 1] for k in range(shapes)], dim=0)
         # Get intrinsic consensus shape
-        sics = IMCP.intrinsic_consensus_shape(q, weights, 10, self.n_points, 3)
-        transformed_x = [(torch.matmul(pose[k][0], shapes[k].T).T + pose[k][1].unsqueeze(0)).unsqueeze(0) for k in
+        print(pose)
+        sics, weights = IMCP.intrinsic_consensus_shape(q, weights, 10, self.n_points, 3)
+
+        manifold_sics = open3d.geometry.PointCloud()
+        manifold_sics.points = open3d.utility.Vector3dVector(sics)
+        open3d.visualization.draw_geometries([manifold_sics])
+
+        ax = plt.axes(projection='3d')
+        ax.scatter(sics[:, 0], sics[:, 1], sics[:, 2])
+        plt.show()
+
+        transformed_x = [(torch.matmul(pose[k][0], x[k].T).T + pose[k][1].unsqueeze(0)).unsqueeze(0) for k in
                          range(shapes)]
         transformed_x = torch.cat(transformed_x, dim=0)
         # Find the MV
         self.mv = CPD.mv(transformed_x, sics)
+
+        ax = plt.axes(projection='3d')
+        ax.scatter(self.mv[:,0], self.mv[:,1], self.mv[:,2])
+        plt.show()
         # Get correspondence of the normalized shapes with the mv
-        correspondence = CPD.correspondence(transformed_x, self.mv, 4)
+        correspondence = CPD.correspondence(transformed_x, self.mv, 20)
 
         # Permute the orginial shapes to be in the order of the mv shape
         permuted_shapes = self.reorder(x, correspondence)

@@ -18,7 +18,7 @@ def mv(points: torch.Tensor, sics: torch.Tensor):
     corr_points = []
     ty_points = []
     for k in range(points.shape[0]):
-        reg = cpd.DeformableRegistration(sics.numpy(), points[k].numpy(), alpha=1)
+        reg = cpd.DeformableRegistration(X=sics.numpy(), Y=points[k].numpy(), alpha=1)
         TY, _ = reg.register()
         # Get the target point that has the highest likelihood of corresponding to each point.
         corresponding_points = torch.Tensor(reg.P).argmax(dim=1)
@@ -28,7 +28,7 @@ def mv(points: torch.Tensor, sics: torch.Tensor):
     ty_points = torch.cat(ty_points, dim=0)
     mv = torch.zeros_like(sics)
     for i in range(corr_points.shape[1]):
-        mv[i] = ty_points[corr_points == i].sum(dim=0)
+        mv[i] = ty_points[corr_points == i].mean(dim=0)
     return mv
 
 
@@ -50,7 +50,7 @@ def correspondence(points: torch.Tensor, mv:torch.Tensor, iterations: int):
         many_to_one = True
         curr_iter = 0
         correspond = None
-        reg = cpd.DeformableRegistration(points[k].numpy(), local_mv.numpy())
+        reg = cpd.DeformableRegistration(X=points[k].numpy(), Y=local_mv.numpy())
         while curr_iter < iterations and many_to_one:
 
             reg.iterate()

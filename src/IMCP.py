@@ -136,7 +136,7 @@ def print_points(thing, shapes, K, title='', q=None):
     plt.show()
 
 
-def IMCP(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_max: int = 100, lmda: float = 10):
+def IMCP(points: torch.Tensor, verbose: bool, mu: float = .0001, global_max: int = 100, local_max: int = 100, lmda: float = 10):
     """
     Runs the main loop of the algorithm
     :param points: A tensor of K point clouds
@@ -158,7 +158,8 @@ def IMCP(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_m
     chi_n = torch.full((K,), np.infty)
     chi_o = torch.full((K,), np.infty)
 
-    print_points({'Pose Estimation': t_k}, points, K, 'inital')
+    if verbose:
+        print_points({'Pose Estimation': t_k}, points, K, 'inital')
     w_hat = torch.ones(K, n_points)
     global_count = 0
     q_list = []
@@ -256,19 +257,27 @@ def IMCP(points: torch.Tensor, mu: float = .0001, global_max: int = 100, local_m
         q_list = q_l
         # print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, points, K,
         #              'Point Cloud iteration', q)
-    print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, points, K, 'Point Cloud End')
+    if verbose:
+        print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, points, K, 'Point Cloud End')
+        print_points({'Pose Estimation': [[torch.eye(3), torch.zeros(3)] for _ in range(K)]}, q_list, K,
+                     'Q')
 
     return {'Pose Estimation': t_k, 'Membership': w_hat, 'q': q_list}
 
 def intrinsic_consensus_shape(q_l: torch.Tensor, weights: torch.Tensor, n: int, size: int, iters: int):
     # Get the most reliable points.
-    weights, idx = torch.topk(weights, size)
-    q_l = q_l.gather(0, weights.reshape(-1, 1).expand(-1, 3))
+    weights = weights.reshape(-1)
+    q_l = q_l.reshape(-1, 3)
+
 
     # Find the neighbors of the points to apply laplacian filter.
     for _ in range(iters):
-        q_l = get_laplace_filter(q_l, weights, n)
-    return q_l
+        q_l, weights = get_laplace_filter(q_l, weights, n)
+        print(weights.shape)
 
+    weights, idx = torch.topk(weights, size)
+    q_l = q_l.gather(0, idx.reshape(idx.shape[0], 1).expand(-1, 3))
+    print(weights[weights == 0])
+    return q_l, weights
 if __name__ == '__main__':
     IMCP(torch.randn(10, 1000, 2))
