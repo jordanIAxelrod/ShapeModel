@@ -1,8 +1,11 @@
-
+import open3d
 import pycpd as cpd
 import torch
+import numpy as np
 
-
+"""
+Check if CPD and hippocampus data are 
+"""
 
 def mv(points: torch.Tensor, sics: torch.Tensor):
     """
@@ -17,18 +20,27 @@ def mv(points: torch.Tensor, sics: torch.Tensor):
     """
     corr_points = []
     ty_points = []
+
     for k in range(points.shape[0]):
-        reg = cpd.DeformableRegistration(X=sics.numpy(), Y=points[k].numpy(), alpha=1)
+        reg = cpd.DeformableRegistration(X=sics.numpy(), Y=points[k].numpy(), beta=.000000001, alpha=200000)
         TY, _ = reg.register()
         # Get the target point that has the highest likelihood of corresponding to each point.
-        corresponding_points = torch.Tensor(reg.P).argmax(dim=1)
+        corresponding_points = get_correspondences(reg.P)
         corr_points.append(corresponding_points.unsqueeze(0))
         ty_points.append(torch.Tensor(TY).unsqueeze(0))
     corr_points = torch.cat(corr_points, dim=0)
     ty_points = torch.cat(ty_points, dim=0)
-    mv = torch.zeros_like(sics)
+    mv = torch.zeros_like(points[0])
     for i in range(corr_points.shape[1]):
-        mv[i] = ty_points[corr_points == i].mean(dim=0)
+        local_corr = corr_points[corr_points[:, :, 1] == i][:, 1:]
+        corr_points_gather = ty_points.gather(1, local_corr.unsqueeze(2).expand(local_corr.shape[0], local_corr.shape[1], 3))
+        if torch.sum(corr_points_gather) > 0:
+            mv[i] = corr_points_gather.squeeze(1).mean(dim=0)
+        else:
+            mv[i] = sics[i]
+    mv_manifold = open3d.geometry.PointCloud()
+    mv_manifold.points = open3d.utility.Vector3dVector(mv)
+    open3d.visualization.draw_geometries([mv_manifold])
     return mv
 
 
@@ -47,21 +59,36 @@ def correspondence(points: torch.Tensor, mv:torch.Tensor, iterations: int):
     correspondences = []
     for k in range(points.shape[0]):
         local_mv = mv.clone()
-        many_to_one = True
         curr_iter = 0
-        correspond = None
         reg = cpd.DeformableRegistration(X=points[k].numpy(), Y=local_mv.numpy())
-        while curr_iter < iterations and many_to_one:
+        while curr_iter < iterations:
 
             reg.iterate()
             # Average the current transformation of mv with the corresponding vertices on the original surface
             local_mv = (torch.matmul(torch.Tensor(reg.P), points[k]) + reg.TY) / 2
             curr_iter += 1
-            # Get the max correspondence with the original surface.
-            correspond = torch.Tensor(reg.P).argmax(dim=1)
-            many_to_one = len(correspond.unique()) != mv.shape[0]
+
             reg.TY = local_mv.numpy()
+        # Get the max correspondence with the original surface.
+        correspond = get_correspondences(reg.P)
+        many_to_one = len(correspond[:, 1].unique()) != mv.shape[0]
         correspondences.append(correspond.unsqueeze(0))
         assert not many_to_one, "There is a many to one correspondence"
     return torch.cat(correspondences, dim=0)
 
+
+def get_correspondences(points_matrix):
+    """
+    Greadily get the best next correspondence
+    :param points_matrix:
+    :return:
+    """
+    correspond = []
+    print(points_matrix.shape)
+    for row in range(points_matrix.shape[0]):
+        entry = points_matrix[row].argmax()
+        entry = [row, entry]
+        correspond.append(entry)
+        points_matrix[:, entry[1]] = -1e10
+    tensor = torch.Tensor(correspond).long()
+    return tensor

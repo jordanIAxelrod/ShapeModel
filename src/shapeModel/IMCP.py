@@ -17,7 +17,7 @@ from scipy.spatial.transform import Rotation
 from scipy.spatial import KDTree
 import numpy as np
 import matplotlib.pyplot as plt
-from src.LaplacianFilter import get_laplace_filter
+from src.shapeModel.LaplacianFilter import get_laplace_filter
 
 # This is the first step of the registration. We would like to make all the shapes unit length
 def normalize_shape(point_cloud: torch.Tensor):
@@ -27,12 +27,12 @@ def normalize_shape(point_cloud: torch.Tensor):
         Shape: `(n_shapes, n_points, 3d)'
     :return: A normalized set of K shapes
     """
-
+    print(point_cloud.shape)
     centroids = torch.mean(point_cloud, dim=1)  # (n_shapes, 3d)
     L2 = point_cloud - centroids.unsqueeze(1)
     distance = torch.square(L2)
     distance = torch.sum(distance, dim=2)
-    centroid_size = torch.sqrt(torch.sum(distance, dim=1)) / point_cloud.shape[0]
+    centroid_size = torch.sqrt(torch.sum(distance, dim=1))
     return (point_cloud - centroids.unsqueeze(1)) / centroid_size.reshape(-1, 1, 1)
 
 # This is the second step where we get a decent alignment of the shapes using inertia.
@@ -275,7 +275,7 @@ def intrinsic_consensus_shape(q_l: torch.Tensor, weights: torch.Tensor, n: int, 
         q_l, weights = get_laplace_filter(q_l, weights, n)
         print(weights.shape)
 
-    weights, idx = torch.topk(weights, size)
+    weights, idx = torch.topk(weights, q_l.shape[0] // 2)
     q_l = q_l.gather(0, idx.reshape(idx.shape[0], 1).expand(-1, 3))
     print(weights[weights == 0])
     return q_l, weights
