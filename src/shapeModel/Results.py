@@ -67,13 +67,7 @@ def create_ICP_Model(data):
             loc = loc[pairs['0'][key][0]]
         new_points.append(loc)
 
-def get_explained_variance(model):
-    explained_variance = np.cumsum(model.eig_vals) / sum(model.eig_vals)
-    print(explained_variance)
-    print(model.eig_vals)
-    plt.plot([i for i in range(len(explained_variance))], explained_variance)
-    plt.title("Explained Variance per mode")
-    plt.show()
+
 
 if __name__ == '__main__':
     generality = {}
@@ -81,7 +75,7 @@ if __name__ == '__main__':
         folder = r"C:\Users\jda_s\Box\bone_project\heart_dataset\masks"
         ssm = create_ICMP_Model(read_data(folder), i==0)
         # ssm = IO.load('hi', r"C:\Users\jda_s\OneDrive\Documents\Research\ShapeModel\model\20230209-121010 ICMP.pickle")
-        get_explained_variance(ssm)
+        ssm.get_explained_variance()
         print(ssm.eig_vecs)
         print(ssm.mean_shape, ssm.mean_shape.shape)
         cwd = os.getcwd()

@@ -186,6 +186,14 @@ class ShapeModel(nn.Module):
             shape = shape.unsqueeze(0)
         return shape
 
+    def get_explained_variance(self):
+        explained_variance = np.cumsum(self.eig_vals) / sum(self.eig_vals)
+
+        plt.plot([i for i in range(len(explained_variance))], explained_variance)
+        plt.title("Explained Variance per mode")
+        plt.show()
+        return explained_variance
+
     def save(self):
         IO.save(self)
 
