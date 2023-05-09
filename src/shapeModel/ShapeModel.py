@@ -1,9 +1,9 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import IMCP
-import CPD
-import IO
+import src.shapeModel.IMCP as IMCP
+import src.shapeModel.CPD as CPD
+import src.shapeModel.IO as IO
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import open3d as o3d
@@ -22,6 +22,7 @@ class ShapeModel(nn.Module):
 
     def __init__(self):
         super(ShapeModel, self).__init__()
+        self.final_shapes = None
         self.mv = None
         self.eig_vals = None
         self.eig_vecs = None
@@ -52,31 +53,33 @@ class ShapeModel(nn.Module):
         # Get intrinsic consensus shape
         print(pose)
         sics, weights = IMCP.intrinsic_consensus_shape(q, weights, 10, self.n_points, 3)
+        if verbose:
+            manifold_sics = o3d.geometry.PointCloud()
+            manifold_sics.points = o3d.utility.Vector3dVector(sics)
+            manifold_sics.estimate_normals()
+            radii = [0.0001, 0.0001, 0.0001, .0001]
+            rec_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
+                manifold_sics, o3d.utility.DoubleVector(radii))
+            o3d.visualization.draw_geometries([manifold_sics, rec_mesh])
 
-        manifold_sics = o3d.geometry.PointCloud()
-        manifold_sics.points = o3d.utility.Vector3dVector(sics)
-        manifold_sics.estimate_normals()
-        radii = [0.0001, 0.0001, 0.0001, .0001]
-        rec_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
-            manifold_sics, o3d.utility.DoubleVector(radii))
-        o3d.visualization.draw_geometries([manifold_sics, rec_mesh])
-
-        ax = plt.axes(projection='3d')
-        plt.title('sics')
-        ax.scatter(sics[:, 0], sics[:, 1], sics[:, 2])
-        plt.show()
+            ax = plt.axes(projection='3d')
+            plt.title('sics')
+            ax.scatter(sics[:, 0], sics[:, 1], sics[:, 2])
+            plt.show()
 
         transformed_x = [(torch.matmul(pose[k][0], x_imcp[k].T).T + pose[k][1].unsqueeze(0)).unsqueeze(0) for k in
                          range(shapes)]
-        IMCP.print_points(model, x_imcp, shapes, "Transformed Points")
+        if verbose: 
+            IMCP.print_points(model, x_imcp, shapes, "Transformed Points")
         transformed_x = torch.cat(transformed_x, dim=0)
         # Find the MV
         self.mv = CPD.mv(transformed_x, sics)
-        print('mv shape', self.mv, self.mv.shape)
-        ax = plt.axes(projection='3d')
-        plt.title('mv shape')
-        ax.scatter(self.mv[:, 0], self.mv[:, 1], self.mv[:, 2])
-        plt.show()
+        if verbose:
+            print('mv shape', self.mv, self.mv.shape)
+            ax = plt.axes(projection='3d')
+            plt.title('mv shape')
+            ax.scatter(self.mv[:, 0], self.mv[:, 1], self.mv[:, 2])
+            plt.show()
         # Get correspondence of the normalized shapes with the mv
         correspondence = CPD.correspondence(transformed_x, self.mv, 20)
 
@@ -86,14 +89,15 @@ class ShapeModel(nn.Module):
             x[k] = torch.matmul(pose[k][0], x[k].T).T + pose[k][1]
 
         permuted_shapes = self.reorder(x, correspondence)
-        ax = plt.axes(projection='3d')
-        plt.title('Permuted Shapes')
-
-        for i in range(shapes):
-
-            ax.scatter3D(x[i][:, 0], x[i][:, 1], x[i][:, 2], label=f'{i}')
-        plt.legend()
-        plt.show()
+        if verbose:
+            ax = plt.axes(projection='3d')
+            plt.title('Permuted Shapes')
+    
+            for i in range(shapes):
+    
+                ax.scatter3D(x[i][:, 0], x[i][:, 1], x[i][:, 2], label=f'{i}')
+            plt.legend()
+            plt.show()
         permuted_shapes = permuted_shapes.flatten(1)  # (shapes, n_points * 3)
         self.final_shapes = permuted_shapes
         self.ppca.fit(permuted_shapes)
@@ -129,13 +133,9 @@ class ShapeModel(nn.Module):
         alpha = self._require_dim_len(alpha, 2)
         n_shapes, alpha_dim = alpha.shape
         assert alpha_dim <= self.eig_vals.shape[0]
-        print(alpha)
-        print(alpha.matmul(self.eig_vecs[:alpha_dim]).shape)
-        print((alpha * torch.sqrt(self.eig_vals[:alpha_dim])))
+
         new_shape = self.mean_shape.unsqueeze(0) + (alpha).matmul(self.eig_vecs[:alpha_dim])
-        new_shape = self.ppca.inverse_transform(alpha)
-        print(new_shape.shape)
-        return new_shape.reshape(n_shapes, self.n_points, self.dim)
+        return torch.Tensor(new_shape.reshape(n_shapes, self.n_points, self.dim))
 
     def create_shape_approx(self, shape: torch.Tensor, n_comp: int):
         """
@@ -144,7 +144,8 @@ class ShapeModel(nn.Module):
         :return:
         """
         shape = self._require_dim_len(shape, 3)
-        dim_redux = self.ppca.transform(shape.flatten(1))[:, :n_comp]
+        dim_redux = self.ppca.transform(shape.flatten(1))
+        dim_redux[:, n_comp:] = 0
         return self.create_shape(torch.Tensor(dim_redux))
 
     def register_new_shapes(self, shapes: torch.Tensor) -> torch.Tensor:
@@ -160,19 +161,16 @@ class ShapeModel(nn.Module):
         plt.title("Mean shape and new shape")
 
         for i in range(2):
-            ax.scatter(mean_shape[i, :, 0], mean_shape[i,:, 1], mean_shape[i,:, 2], label=str(i))
+            ax.scatter(mean_shape[i, :, 0], mean_shape[i,:, 1], mean_shape[i,:, 2], label=['New', 'Mean'][i])
         plt.legend()
         plt.show()
 
         transformation = icp.icp(norm_shapes.squeeze(0).numpy(), self.mv.numpy())
-        print('hi', transformation[0])
         d4shapes = np.concatenate([norm_shapes.squeeze(0), np.ones_like(shapes[0, :, 0:1])], axis=1)
-        print(d4shapes.shape)
         norm_shapes = torch.Tensor(np.matmul(transformation[0], d4shapes.T).T[:, :-1])
         correspondences = CPD.correspondence(norm_shapes.unsqueeze(0), self.mv, 4)
         registered_shapes = self.reorder(shapes, correspondences)
         registered_shapes = r.matmul((registered_shapes - registered_shapes.mean(dim=1)).mT).mT
-        print(torch.ones_like(registered_shapes[:, :, 0:1]).shape)
         registered_shapes = torch.cat([registered_shapes, torch.ones_like(registered_shapes[:, :, 0:1])], dim=2)
         registered_shapes = torch.Tensor(transformation[0]).matmul(registered_shapes.permute(0,2,1)).permute(0,2,1)[:, :, :-1]
         return registered_shapes

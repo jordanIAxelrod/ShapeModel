@@ -4,8 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-import ShapeModel
-import IO
+import src.shapeModel.ShapeModel as ShapeModel
 
 import torch
 import nibabel as nib
@@ -20,14 +19,14 @@ def get_outline(shape):
                     point_list.append([i, j, k])
     return np.array(point_list)
 
-def read_data(folder):
+def read_data(folder, leave_out=1):
     dataframe = []
     cwd = os.getcwd()
     os.chdir(folder)
     curr_dir = os.listdir()
-    print(curr_dir[:18])
-    print(len(curr_dir))
-    for direct in curr_dir[:18]:
+    curr_dir = curr_dir[:leave_out] + curr_dir[leave_out + 1:]
+
+    for direct in curr_dir:
         os.chdir(direct)
         file = os.listdir()[0]
 
@@ -44,10 +43,11 @@ def read_data(folder):
     os.chdir(cwd)
     return torch.cat(dataframe, dim=0)
 
-def create_ICMP_Model(data):
+def create_ICMP_Model(data, verbose=True, save=False):
     model = ShapeModel.ShapeModel()
-    model(data, verbose=True)
-    model.save()
+    model(data, verbose=verbose)
+    if save:
+        model.save()
     return model
 
 
@@ -76,26 +76,46 @@ def get_explained_variance(model):
     plt.show()
 
 if __name__ == '__main__':
-    ssm = create_ICMP_Model(read_data(r"C:\Users\jda_s\Box\bone_project\heart_dataset\masks"))
-    # ssm = IO.load('hi', r"C:\Users\jda_s\OneDrive\Documents\Research\ShapeModel\model\20230209-121010 ICMP.pickle")
-    get_explained_variance(ssm)
-    print(ssm.eig_vecs)
-    print(ssm.mean_shape, ssm.mean_shape.shape)
-    mean_shape = ssm.mean_shape.reshape(-1, 3)
-    ax = plt.axes(projection='3d')
-    plt.title('mean shape original size')
-    ax.scatter(mean_shape[:, 0], mean_shape[:, 1], mean_shape[:, 2])
-    plt.show()
-    new_shape = nib.load(r"C:\Users\jda_s\Box\bone_project\heart_dataset\masks\la_029\x.nii.gz").get_fdata()
-    new_shape = get_outline(new_shape)
-    choice = np.random.choice(new_shape.shape[0], size=(927,), replace=False)
-    new_shape = torch.Tensor(new_shape[choice]).unsqueeze(0)
-    reg_shape = ssm.register_new_shapes(torch.Tensor(new_shape))
+    generality = {}
+    for i in range(20):
+        folder = r"C:\Users\jda_s\Box\bone_project\heart_dataset\masks"
+        ssm = create_ICMP_Model(read_data(folder), i==0)
+        # ssm = IO.load('hi', r"C:\Users\jda_s\OneDrive\Documents\Research\ShapeModel\model\20230209-121010 ICMP.pickle")
+        get_explained_variance(ssm)
+        print(ssm.eig_vecs)
+        print(ssm.mean_shape, ssm.mean_shape.shape)
+        cwd = os.getcwd()
+        print(cwd)
+        os.chdir(folder)
+        curr_dir = os.listdir()[i]
+        os.chdir(curr_dir)
+        shape = os.listdir()[0]
+        new_shape = nib.load(shape).get_fdata()
+        new_shape = get_outline(new_shape)
+        choice = np.random.choice(new_shape.shape[0], size=(927,), replace=False)
+        new_shape = torch.Tensor(new_shape[choice]).unsqueeze(0)
+        reg_shape = ssm.register_new_shapes(torch.Tensor(new_shape))
+        generality[i] = []
+        for j in range(1, ssm.eig_vals.shape[0]):
 
-    for i in range(ssm.eig_vals.shape[0] - 1, ssm.eig_vals.shape[0]):
-        new_shape = ssm.create_shape_approx(reg_shape, i + 1)
+            new_shape1 = ssm.create_shape_approx(reg_shape, j + 1)
+            dist = torch.sqrt(torch.sum(torch.square(reg_shape - new_shape1)) / (927 * 3))
+            generality[i].append(dist)
         ax = plt.axes(projection='3d')
         plt.title('Reconstructions')
-        ax.scatter(new_shape[0,:, 0], new_shape[0,:, 1], new_shape[0,:, 2])
+        ax.scatter(new_shape1[0, :, 0], new_shape1[0, :, 1], new_shape1[0, :, 2])
         ax.scatter(reg_shape[0, :, 0], reg_shape[0, :, 1], reg_shape[0, :, 2])
+        os.chdir(cwd)
+        print(cwd)
+        plt.savefig('../img/Reconstruction.png')
         plt.show()
+    averages = []
+    for i in range(len(generality[0])):
+        average = sum([generality[k][i] for k in generality.keys()]) / len(generality)
+        averages.append(average)
+    plt.title("Generality")
+    plt.xlabel("PC Number")
+    plt.plot(list(range(len(averages))), averages)
+    plt.savefig('../img/Generality.png')
+    plt.show()
+

@@ -7,7 +7,7 @@ import numpy as np
 Check if CPD and hippocampus data are 
 """
 
-def mv(points: torch.Tensor, sics: torch.Tensor):
+def mv(points: torch.Tensor, sics: torch.Tensor, verbose=False):
     """
     Creates the mv found in number two on pages 3 and four of
     An Automated Statistical Shape Model Developmental Pipeline: Application to the Human Scapula and Humerus
@@ -38,9 +38,10 @@ def mv(points: torch.Tensor, sics: torch.Tensor):
             mv[i] = corr_points_gather.squeeze(1).mean(dim=0)
         else:
             mv[i] = sics[i]
-    mv_manifold = open3d.geometry.PointCloud()
-    mv_manifold.points = open3d.utility.Vector3dVector(mv)
-    open3d.visualization.draw_geometries([mv_manifold])
+    if verbose:
+        mv_manifold = open3d.geometry.PointCloud()
+        mv_manifold.points = open3d.utility.Vector3dVector(mv)
+        open3d.visualization.draw_geometries([mv_manifold])
     return mv
 
 

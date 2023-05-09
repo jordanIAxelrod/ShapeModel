@@ -13,7 +13,6 @@ date: 10.27.22
 import math
 
 import torch
-from scipy.spatial.transform import Rotation
 from scipy.spatial import KDTree
 import numpy as np
 import matplotlib.pyplot as plt
